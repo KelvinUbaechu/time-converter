@@ -19,6 +19,22 @@
 
 
 /**
+ * Returns the response JSON if the response has a status of 200 (OK). Throws an
+ * error stating the HTTP response, if otherwise
+ * @param {string} request_url The request url where response will come from
+ * @throws Throws an error showing the response status if that status is not 200
+ * @returns The response JSON
+ */
+ async function getResponseJSONIfOk(request_url) {
+    const response = await fetch(request_url);
+    if(!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
+    }
+    return response.json();
+}
+
+
+/**
  * Returns time and timezone information of the specified location.
  *
  * @param {string} timezone A partial url path that denotes a particular location
@@ -28,12 +44,8 @@
  * @return {Promise<WorldTimeAPIJSON>} An object containing information about the timezone.
  */
 async function getTimezoneData(timezone) {
-    const URL = `http://worldtimeapi.org/api/timezone/${timezone}`;
-    const response = await fetch(URL);
-    if(!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
-    }
-    return response.json();
+    const url = `http://worldtimeapi.org/api/timezone/${timezone}`;
+    return getResponseJSONIfOk(url);
 }
 
 
@@ -93,3 +105,37 @@ function getHoursAndMinutesFromMilliseconds(milliseconds) {
         minutes: date.getUTCMinutes()
     }
 }
+
+
+/**
+ * Transforms the array of locales composed of up to three components (area, location, and region,
+ * read more about them here: http://worldtimeapi.org/pages/examples) into a global nested object
+ * that groups these locales according to these components.
+ * 
+ * @param {string[]} zones An array of all the valid timezone locales that WorldTimeAPI can accept
+ */
+function loadTimezoneLocales(zones) {
+    for(const zone of zones) {
+        const zoneComponents = zone.split('/');
+        const area = zoneComponents[0];
+        if(!(area in GROUPED_TIMEZONES_LOCALES)) {
+            GROUPED_TIMEZONES_LOCALES[area] = {}
+        }
+        if(zoneComponents.length === 1) {
+            continue;
+        }
+        const location = zoneComponents[1];
+        const region = (zoneComponents.length === 3) ? zoneComponents[2] : null;
+        if(!(location in GROUPED_TIMEZONES_LOCALES[area])) {
+            GROUPED_TIMEZONES_LOCALES[area][location] = [];
+        }
+        if(region) {
+            GROUPED_TIMEZONES_LOCALES[area][location].push(region);
+        }
+    }
+}
+
+const GROUPED_TIMEZONES_LOCALES = {};
+getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
+    .then(loadTimezoneLocales)
+    .catch(e => console.error(e));
