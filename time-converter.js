@@ -229,6 +229,57 @@ function updateDropdowns(category, updatedDropdownDiv, subComponentValues) {
     dropdownContainer.appendChild(subComponentDropdownDiv);
 }
 
+
+/**
+ * Sets the disabled attribute for all the dropdowns within the given container.
+ * @param {HTMLDivElement} dropdownContainer Container of dropdown divs.
+ * @param {boolean} disabledState Whether the dropdowns should be disabled or enabled.
+ */
+function setDisabledAttrOfDropdowns(dropdownContainer, disabledState) {
+    dropdownContainer.childNodes.forEach(node => {
+        const selectElement = node.lastChild;
+        selectElement.disabled = disabledState;
+    });
+}
+
+
+/**
+ * Retrieves and stores the timezone data of the complete locale
+ * @param {HTMLDivElement} dropdownContainer The container of dropdowns that contain
+ * the updated locale
+ * @param {string[]} localeComponents The components of the locale used to obtain
+ * the timezone data
+ */
+function updateStoredTimezones(dropdownContainer, localeComponents) {
+    const partialUrl = localeComponents.join('/');
+    setDisabledAttrOfDropdowns(dropdownContainer, true);
+    const contentPanelId = dropdownContainer.parentElement.id;
+    getTimezoneData(partialUrl)
+        .then(data => {
+            CURRENT_TIMEZONES[contentPanelId] = data;
+            const utcOffsetPara = document.querySelector(`#${contentPanelId} .utc-offset`);
+            utcOffsetPara.textContent = `UTC: ${data.utc_offset}`;
+            setDisabledAttrOfDropdowns(dropdownContainer, false);
+        })
+        .catch(e => {
+            console.error(e);
+            setDisabledAttrOfDropdowns(dropdownContainer, false);
+        });
+}
+
+
+/**
+ * Clears the stored timezone for the category. Resets the UTC offset
+ * for the content of the category as well.
+ * @param {string} category Either 'origin' or 'target'.
+ */
+function clearStoredTimezone(category) {
+    CURRENT_TIMEZONES[category] = null;
+    const utcOffsetPara = document.querySelector(`#${category} .utc-offset`);
+    utcOffsetPara.textContent = 'UTC: N/A';
+}
+
+
 /**
  * The callback for all select elements. Used to create and remove dropdowns
  * according to the selected locales.
@@ -238,6 +289,12 @@ function updateSelectedTimezoneCallback() {
     const localeComponents = getLocaleOfDropdown(this.parentElement);
     const subComponentValues = getSubComponentValuesOfLocale(localeComponents);
     updateDropdowns(category, this.parentElement, subComponentValues);
+    if(subComponentValues.length !== 0) {
+        clearStoredTimezone(category);
+        return;
+    }
+    const dropdownContainer = this.parentElement.parentElement;
+    updateStoredTimezones(dropdownContainer, localeComponents);
 }
 
 /**
@@ -308,6 +365,7 @@ function loadAreaDropdowns() {
 const originDropdownContainer = document.querySelector('#origin .dropdown-container');
 const targetDropdownContainer = document.querySelector('#target .dropdown-container');
 const GROUPED_TIMEZONES_LOCALES = {}; // TODO: Create schema showing structure of this object
+const CURRENT_TIMEZONES = {origin: null, target: null};
 getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
     .then(loadTimezoneLocales)
     .then(loadAreaDropdowns)
