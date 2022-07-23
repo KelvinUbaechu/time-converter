@@ -108,13 +108,171 @@ function getHoursAndMinutesFromMilliseconds(milliseconds) {
 
 
 /**
+ * Creates a div containing a dropdown with the given values as well as a label 
+ * for the dropdown.
+ * @param {string} id The id of the div and the name of the select tag.
+ * @param {string} labelText The text of the label that's display besides the select element.
+ * @param {Map<string, string>} optionValueTexts The value of each option and their associated text content
+ * that will be displayed to the user.
+ * @returns Returns a div with class dropdown containing a label and a select element.
+ */
+ function createDropdown(id, labelText, optionValueTexts) {
+    const dropdownDiv = document.createElement('div');
+    dropdownDiv.classList.add('dropdown');
+    dropdownDiv.id = id;
+
+    const dropdownLabel = document.createElement('label');
+    dropdownLabel.htmlFor = id;
+    dropdownLabel.textContent = labelText;
+
+    const dropdown = document.createElement('select');
+    dropdown.name = id;
+    dropdown.addEventListener('change', updateSelectedTimezoneCallback);
+
+    // Ensure blank select option is first
+    const selectOption = document.createElement('option');
+    selectOption.value = '(select)';
+    selectOption.textContent = '(select)';
+    dropdown.appendChild(selectOption);
+    optionValueTexts.forEach((key, value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = key;
+        dropdown.appendChild(option);
+    });
+
+    dropdownDiv.appendChild(dropdownLabel);
+    dropdownDiv.appendChild(dropdown);
+    return dropdownDiv;
+}
+
+
+/**
+ * Returns the category of the dropdown div.
+ * 
+ * The category is either 'origin' or 'target'.
+ * @param {HTMLDivElement} dropdownDiv The dropdown to get the category of.
+ * @returns {string} The category of the dropdown.
+ */
+function getCategoryOfDropdown(dropdownDiv) {
+    return dropdownDiv.id.split('-')[0];
+}
+
+/**
+ * Return the locale of the dropdown.
+ * 
+ * In other words, get the locale components of the timezone up until we hit the
+ * component that the given dropdown represents.
+ * @param {HTMLDivElement} dropdownDiv The dropdown with the 'leaf' portion of the locale.
+ * @returns {string[]} An array containing the components of the dropdown's locale.
+ */
+function getLocaleOfDropdown(dropdownDiv) {
+    const localeDropdowns = Array.from(dropdownDiv.parentElement.childNodes);
+    const indexOfDropdownDiv = localeDropdowns.indexOf(dropdownDiv);
+    return localeDropdowns.slice(0, indexOfDropdownDiv + 1).map(dropdown => {
+        const selectElement = dropdown.lastChild;
+        return selectElement.value;
+    });
+}
+
+
+/**
+ * Returns an array of strings that represent the possible
+ * values for the sub component of the given locale.
+ * @param {string[]} localeComponents The components of the locale.
+ * Can have a maximum of three elements representing the area, location,
+ * and region components respectively. Should have at least an area component.
+ * @returns {string[]} The possible values for the locale's sub component.
+ */
+function getSubComponentValuesOfLocale([area, location, region]) {
+    if(region) {
+        return [];
+    }
+    if(location) {
+        return GROUPED_TIMEZONES_LOCALES[area][location];
+    }
+    return Object.keys(GROUPED_TIMEZONES_LOCALES[area]);
+}
+
+
+/**
+ * Gets the locale component title from the div that contains
+ * the super (parent) component.
+ * @param {HTMLDivElement} superDropdownDiv The dropdown div that contains the
+ * super-component of the locale.
+ * @returns {string} The title of the component (either 'location' or 'region').
+ */
+function getComponentTitleFromSuperComponentDiv(superDropdownDiv) {
+    const indexOfComponent = superDropdownDiv.parentElement.childNodes.length + 1;
+    return (indexOfComponent === 2) ? 'location' : 'region';
+}
+
+
+/**
+ * Update the dropdowns to reflect the changes to the selected locales.
+ * @param {string} category Either 'origin' or 'target'.
+ * @param {HTMLDivElement} updatedDropdownDiv The dropdown that contains the 'leaf'
+ * of the updated locale.
+ * @param {string[]} subComponentValues The possible values of the sub component
+ * for the updated locale.
+ */
+function updateDropdowns(category, updatedDropdownDiv, subComponentValues) {
+    removeSiblingsUnderDropdown(updatedDropdownDiv);
+    if(subComponentValues.length === 0) {
+        return;
+    }
+    const subComponentTitle = getComponentTitleFromSuperComponentDiv(updatedDropdownDiv);
+    const dropdownContainer = (category === 'origin') ? originDropdownContainer : targetDropdownContainer;
+    const optionValueTexts = getOptionValueMap(subComponentValues);
+    const subComponentDropdownId = `${category}-${subComponentTitle}`;
+    const subComponentDropdownDiv = createDropdown(subComponentDropdownId, `${subComponentTitle}: `, optionValueTexts);
+    dropdownContainer.appendChild(subComponentDropdownDiv);
+}
+
+/**
+ * The callback for all select elements. Used to create and remove dropdowns
+ * according to the selected locales.
+ */
+function updateSelectedTimezoneCallback() {
+    const category = getCategoryOfDropdown(this.parentElement);
+    const localeComponents = getLocaleOfDropdown(this.parentElement);
+    const subComponentValues = getSubComponentValuesOfLocale(localeComponents);
+    updateDropdowns(category, this.parentElement, subComponentValues);
+}
+
+/**
+ * Removes all dropdown divs below the given dropdown div.
+ * @param {HTMLDivElement} dropdownDiv The dropdown whose siblings below it will be removed.
+ */
+function removeSiblingsUnderDropdown(dropdownDiv) {
+    const parentDiv = dropdownDiv.parentElement;
+    while(parentDiv.lastChild !== dropdownDiv) {
+        parentDiv.removeChild(parentDiv.lastChild);
+    }
+}
+
+/**
+ * Transforms array of locale components into a version without underscores for
+ * display.
+ * @param {string[]} localeArray An array of locale components
+ * @returns {Map<string, string>} A map that has the locale components as keys and their
+ * display-friendly form as values.
+ */
+function getOptionValueMap(localeArray) {
+    return new Map(localeArray.map(key => [key, key.replace('_', ' ')]));
+}
+
+
+/**
  * Transforms the array of locales composed of up to three components (area, location, and region,
  * read more about them here: http://worldtimeapi.org/pages/examples) into a global nested object
  * that groups these locales according to these components.
  * 
- * @param {string[]} zones An array of all the valid timezone locales that WorldTimeAPI can accept
+ * @param {string[]} zones An array of all the valid timezone locales that WorldTimeAPI can accept.
  */
-function loadTimezoneLocales(zones) {
+ function loadTimezoneLocales(zones) {
+    // Zones are appear like the following:
+    // '{area}' or '{area}/{location}' or '{area}/{location}/{region}'
     for(const zone of zones) {
         const zoneComponents = zone.split('/');
         const area = zoneComponents[0];
@@ -135,7 +293,22 @@ function loadTimezoneLocales(zones) {
     }
 }
 
-const GROUPED_TIMEZONES_LOCALES = {};
+
+/**
+ * Loads the dropdowns containing the area locales, which are the top-level
+ * of the locales that WorldTimeAPI can accept.
+ */
+function loadAreaDropdowns() {
+    const areas = getOptionValueMap(Object.keys(GROUPED_TIMEZONES_LOCALES));
+    originDropdownContainer.appendChild(createDropdown('origin-area', 'area: ', areas));
+    targetDropdownContainer.appendChild(createDropdown('target-area', 'area: ', areas));
+}
+
+
+const originDropdownContainer = document.querySelector('#origin .dropdown-container');
+const targetDropdownContainer = document.querySelector('#target .dropdown-container');
+const GROUPED_TIMEZONES_LOCALES = {}; // TODO: Create schema showing structure of this object
 getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
     .then(loadTimezoneLocales)
+    .then(loadAreaDropdowns)
     .catch(e => console.error(e));
