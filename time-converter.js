@@ -108,6 +108,40 @@ function getHoursAndMinutesFromMilliseconds(milliseconds) {
 
 
 /**
+ * Pads zeros to the left of the given number, so that the
+ * given number is always the given number of digits.
+ * 
+ * This function assumes that num has at most numOfDigits number.
+ * @param {number} num The number to be padded.
+ * @param {number} numOfDigits The number of digits of the padded number.
+ * @returns {string} The padded number.
+ */
+function padNumWithZeros(num, numOfDigits) {
+    const digits = [];
+    for(let i = 0; i < numOfDigits; i++) {
+        digits.push('0');
+    }
+    digits.push(num.toString());
+    return digits.join('').slice(-numOfDigits);
+}
+
+
+/**
+ * Converts a 24-hour time string (i.e. '15:34') to a 12-hour
+ * time string (i.e '03:34 PM') 
+ * @param {string} timeString 24-hour time string
+ * @returns {string} Converted 12-hour time string
+ */
+function convert24HourTimeStringTo12Hour(timeString) {
+    const [hours, minutes] = timeString.split(':').map(num => parseInt(num));
+    if(hours <= 12) {
+        return `${padNumWithZeros(hours, 2)}:${padNumWithZeros(minutes, 2)} AM`;
+    }
+    return `${padNumWithZeros(hours - 12, 2)}:${padNumWithZeros(minutes, 2)} PM`;
+}
+
+
+/**
  * Creates a div containing a dropdown with the given values as well as a label 
  * for the dropdown.
  * @param {string} id The id of the div and the name of the select tag.
@@ -261,6 +295,7 @@ function updateStoredTimezones(dropdownContainer, localeComponents) {
             utcOffsetPara.textContent = `UTC: ${data.utc_offset}`;
             setDisabledAttrOfDropdowns(dropdownContainer, false);
         })
+        .then(updateTimeOutput)
         .catch(e => {
             console.error(e);
             setDisabledAttrOfDropdowns(dropdownContainer, false);
@@ -281,6 +316,25 @@ function clearStoredTimezone(category) {
 
 
 /**
+ * Updates the time output to display the target time at the specified origin
+ * time. The time output is in the 12-hour format. If the time input is incomplete
+ * or either of the inputted timezone locales are incomplete, then the time output
+ * is cleared.
+ * @returns 
+ */
+function updateTimeOutput() {
+    if(!(CURRENT_TIMEZONES.origin && CURRENT_TIMEZONES.target && timeInput.value)) {
+        timeOutput.textContent = "--:-- --";
+        return;
+    }
+    const timeInputMilliseconds = convertTimeStringToMilliseconds(timeInput.value);
+    const targetTimeMilliseconds = findTimeAtTargetTZ(CURRENT_TIMEZONES.origin, CURRENT_TIMEZONES.target, timeInputMilliseconds);
+    const {hours: targetTimeHours, minutes: targetTimeMinutes} = getHoursAndMinutesFromMilliseconds(targetTimeMilliseconds);
+    timeOutput.textContent = convert24HourTimeStringTo12Hour(`${targetTimeHours}:${targetTimeMinutes}`);
+}
+
+
+/**
  * The callback for all select elements. Used to create and remove dropdowns
  * according to the selected locales.
  */
@@ -291,6 +345,7 @@ function updateSelectedTimezoneCallback() {
     updateDropdowns(category, this.parentElement, subComponentValues);
     if(subComponentValues.length !== 0) {
         clearStoredTimezone(category);
+        updateTimeOutput();
         return;
     }
     const dropdownContainer = this.parentElement.parentElement;
@@ -364,6 +419,9 @@ function loadAreaDropdowns() {
 
 const originDropdownContainer = document.querySelector('#origin .dropdown-container');
 const targetDropdownContainer = document.querySelector('#target .dropdown-container');
+const timeInput = document.querySelector('#time-input');
+timeInput.addEventListener('change', updateTimeOutput);
+const timeOutput = document.querySelector('#time-output');
 const GROUPED_TIMEZONES_LOCALES = {}; // TODO: Create schema showing structure of this object
 const CURRENT_TIMEZONES = {origin: null, target: null};
 getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
