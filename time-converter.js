@@ -216,16 +216,17 @@ function getLocaleOfDropdown(dropdownDiv) {
  * @param {string[]} localeComponents The components of the locale.
  * Can have a maximum of three elements representing the area, location,
  * and region components respectively. Should have at least an area component.
- * @returns {string[]} The possible values for the locale's sub component.
+ * @returns {string[]|null} The possible values for the locale's sub component
+ * or null if the locale isn't valid.
  */
 function getSubComponentValuesOfLocale([area, location, region]) {
     if(region) {
-        return [];
+        return (GROUPED_TIMEZONES_LOCALES[area]?.[location]?.includes(region)) ? [] : null;
     }
     if(location) {
-        return GROUPED_TIMEZONES_LOCALES[area][location];
+        return GROUPED_TIMEZONES_LOCALES[area]?.[location] ?? null;
     }
-    return Object.keys(GROUPED_TIMEZONES_LOCALES[area]);
+    return (GROUPED_TIMEZONES_LOCALES[area]) ? Object.keys(GROUPED_TIMEZONES_LOCALES[area]) : null;
 }
 
 
@@ -247,12 +248,12 @@ function getComponentTitleFromSuperComponentDiv(superDropdownDiv) {
  * @param {string} category Either 'origin' or 'target'.
  * @param {HTMLDivElement} updatedDropdownDiv The dropdown that contains the 'leaf'
  * of the updated locale.
- * @param {string[]} subComponentValues The possible values of the sub component
+ * @param {string[]|null} subComponentValues The possible values of the sub component
  * for the updated locale.
  */
 function updateDropdowns(category, updatedDropdownDiv, subComponentValues) {
     removeSiblingsUnderDropdown(updatedDropdownDiv);
-    if(subComponentValues.length === 0) {
+    if(subComponentValues === null || subComponentValues.length === 0) {
         return;
     }
     const subComponentTitle = getComponentTitleFromSuperComponentDiv(updatedDropdownDiv);
@@ -343,7 +344,7 @@ function updateSelectedTimezoneCallback() {
     const localeComponents = getLocaleOfDropdown(this.parentElement);
     const subComponentValues = getSubComponentValuesOfLocale(localeComponents);
     updateDropdowns(category, this.parentElement, subComponentValues);
-    if(subComponentValues.length !== 0) {
+    if(subComponentValues === null || subComponentValues.length !== 0) {
         clearStoredTimezone(category);
         updateTimeOutput();
         return;
