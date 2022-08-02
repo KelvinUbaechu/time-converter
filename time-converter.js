@@ -133,11 +133,34 @@ function padNumWithZeros(num, numOfDigits) {
  * @returns {string} Converted 12-hour time string
  */
 function convert24HourTimeStringTo12Hour(timeString) {
-    const [hours, minutes] = timeString.split(':').map(num => parseInt(num));
-    if(hours <= 12) {
-        return `${padNumWithZeros(hours, 2)}:${padNumWithZeros(minutes, 2)} AM`;
+    let [hours, minutes] = timeString.split(':').map(num => parseInt(num));
+    let period;
+    if(hours < 12) {
+        period = 'AM';
+    } else {
+        period = 'PM';
+        hours -= 12;
     }
-    return `${padNumWithZeros(hours - 12, 2)}:${padNumWithZeros(minutes, 2)} PM`;
+    const hourString = (hours === 0) ? '12' : padNumWithZeros(hours, 2);
+    const minuteString = padNumWithZeros(minutes, 2);
+    return `${hourString}:${minuteString} ${period}`;
+}
+
+/**
+ * Converts a 12-hour time string (i.e. '19:12') to a 12-hour
+ * time string (i.e '07:12 PM')
+ * @param {string} timeString 12-hour time string
+ * @returns {string} Converted 24-hour time string
+ */
+ function convert12HourTimeStringTo24Hour(timeString) {
+    const [bareTimeString, period] = timeString.split(' ');
+    const [hours, minutes] = bareTimeString.split(':').map(num => parseInt(num));
+    const minuteString = padNumWithZeros(minutes, 2);
+    if(period === 'AM') {
+        return (hours === 12) ? `00:${minuteString}` : bareTimeString;
+    }
+    const hourString = (hours === 12) ? '12' : padNumWithZeros(hours + 12);
+    return `${hourString}:${minuteString}`;
 }
 
 
@@ -178,6 +201,61 @@ function convert24HourTimeStringTo12Hour(timeString) {
     dropdownDiv.appendChild(dropdownLabel);
     dropdownDiv.appendChild(dropdown);
     return dropdownDiv;
+}
+
+
+/**
+ * Changes the ids of the descendents of the dropdown containers to fit with 
+ * the new category.
+ * @param {HTMLDivElement} dropdownContainer The container whose descendents' ids
+ * or names will change.
+ * @param {string} newCategory The new category of the dropdown container.
+ * Can be either 'origin' or 'target'.
+ */
+function changeCategoryOfDescendents(dropdownContainer, newCategory) {
+    for(const dropdownDiv of dropdownContainer.childNodes) {
+        const localeName = dropdownDiv.id.split('-')[1];
+        const newId = `${newCategory}-${localeName}`;
+        dropdownDiv.id = newId;
+        const [label, selectElement] = dropdownDiv.childNodes;
+        label.htmlFor = newId;
+        selectElement.name = newId;
+    }
+}
+
+
+/**
+ * Swaps the places of the origin and target timezones
+ * with each other.
+ * The dropdown containers are swapped with one another.
+ * The UTC offsets (if any) are swapped.
+ * The value of the time input is swapped with the value
+ * of the time output.
+ */
+function swapOriginAndTargetTimezones() {
+    // Swaps the origin and target dropdowns
+    const targetParent = targetDropdownContainer.parentElement;
+    const originParent = originDropdownContainer.parentElement;
+    [originDropdownContainer, targetDropdownContainer] = [targetDropdownContainer, originDropdownContainer];
+    changeCategoryOfDescendents(targetDropdownContainer, 'target');
+    changeCategoryOfDescendents(originDropdownContainer, 'origin');
+    targetParent.insertAdjacentElement('afterbegin', targetDropdownContainer);
+    originParent.insertAdjacentElement('afterbegin', originDropdownContainer);
+
+    if(!timeOutput.textContent.startsWith('-') && timeInput.value) {
+        const temp = timeOutput.textContent;
+        timeOutput.textContent = convert24HourTimeStringTo12Hour(timeInput.value);
+        timeInput.value = convert12HourTimeStringTo24Hour(temp);
+    } else {
+        timeOutput.textContent = '--:-- --';
+        timeInput.value = '';
+    }
+
+    const targetUTCOffset = document.querySelector('#target .utc-offset');
+    const originUTCOffset = document.querySelector('#origin .utc-offset');
+    [targetUTCOffset.textContent, originUTCOffset.textContent] = [originUTCOffset.textContent, targetUTCOffset.textContent];
+
+    [CURRENT_TIMEZONES.origin, CURRENT_TIMEZONES.target] = [CURRENT_TIMEZONES.target, CURRENT_TIMEZONES.origin];
 }
 
 
@@ -418,11 +496,13 @@ function loadAreaDropdowns() {
 }
 
 
-const originDropdownContainer = document.querySelector('#origin .dropdown-container');
-const targetDropdownContainer = document.querySelector('#target .dropdown-container');
+let originDropdownContainer = document.querySelector('#origin .dropdown-container');
+let targetDropdownContainer = document.querySelector('#target .dropdown-container');
 const timeInput = document.querySelector('#time-input');
 timeInput.addEventListener('change', updateTimeOutput);
 const timeOutput = document.querySelector('#time-output');
+const swapTimezonesBtn = document.querySelector('#switch-timezones');
+swapTimezonesBtn.addEventListener('click', swapOriginAndTargetTimezones);
 const GROUPED_TIMEZONES_LOCALES = {}; // TODO: Create schema showing structure of this object
 const CURRENT_TIMEZONES = {origin: null, target: null};
 getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
