@@ -501,12 +501,14 @@ function loadAreaDropdowns() {
 let originDropdownContainer = document.querySelector('#origin .dropdown-container');
 let targetDropdownContainer = document.querySelector('#target .dropdown-container');
 const timeInput = document.querySelector('#time-input');
-timeInput.addEventListener('change', updateTimeOutput);
 const timeOutput = document.querySelector('#time-output');
 const swapTimezonesBtn = document.querySelector('#switch-timezones');
-swapTimezonesBtn.addEventListener('click', swapOriginAndTargetTimezones);
 const GROUPED_TIMEZONES_LOCALES = {}; // TODO: Create schema showing structure of this object
 const CURRENT_TIMEZONES = {origin: null, target: null};
+
+swapTimezonesBtn.addEventListener('click', swapOriginAndTargetTimezones);
+timeInput.addEventListener('change', updateTimeOutput);
+
 getResponseJSONIfOk('http://worldtimeapi.org/api/timezone')
     .then(loadTimezoneLocales)
     .then(loadAreaDropdowns)
