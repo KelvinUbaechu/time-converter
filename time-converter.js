@@ -165,6 +165,203 @@ function convert24HourTimeStringTo12Hour(timeString) {
 
 
 /**
+ * Transforms array of locale components into a version without underscores for
+ * display.
+ * @param {string[]} localeArray An array of locale components
+ * @returns {Map<string, string>} A map that has the locale components as keys and their
+ * display-friendly form as values.
+ */
+ function getOptionValueMap(localeArray) {
+    return new Map(localeArray.map(key => [key, key.replace('_', ' ')]));
+}
+
+
+/**
+ * Updates the time output to display the target time at the specified origin
+ * time. The time output is in the 12-hour format. If the time input is incomplete
+ * or either of the inputted timezone locales are incomplete, then the time output
+ * is cleared.
+ */
+ function updateTimeOutput() {
+    if(!(CURRENT_TIMEZONES.origin && CURRENT_TIMEZONES.target && timeInput.value)) {
+        timeOutput.textContent = "--:-- --";
+        return;
+    }
+    const timeInputMilliseconds = convertTimeStringToMilliseconds(timeInput.value);
+    const targetTimeMilliseconds = findTimeAtTargetTZ(CURRENT_TIMEZONES.origin, CURRENT_TIMEZONES.target, timeInputMilliseconds);
+    const {hours: targetTimeHours, minutes: targetTimeMinutes} = getHoursAndMinutesFromMilliseconds(targetTimeMilliseconds);
+    timeOutput.textContent = convert24HourTimeStringTo12Hour(`${targetTimeHours}:${targetTimeMinutes}`);
+}
+
+
+/**
+ * Clears the stored timezone for the category. Resets the UTC offset
+ * for the content of the category as well.
+ * @param {string} category Either 'origin' or 'target'.
+ */
+ function clearStoredTimezone(category) {
+    CURRENT_TIMEZONES[category] = null;
+    const utcOffsetPara = document.querySelector(`#${category} .utc-offset`);
+    utcOffsetPara.textContent = 'UTC: N/A';
+}
+
+
+/**
+ * Sets the disabled attribute for all the dropdowns within the given container.
+ * @param {HTMLDivElement} dropdownContainer Container of dropdown divs.
+ * @param {boolean} disabledState Whether the dropdowns should be disabled or enabled.
+ */
+ function setDisabledAttrOfDropdowns(dropdownContainer, disabledState) {
+    dropdownContainer.childNodes.forEach(node => {
+        const selectElement = node.lastChild;
+        selectElement.disabled = disabledState;
+    });
+}
+
+
+/**
+ * Retrieves and stores the timezone data of the complete locale
+ * @param {HTMLDivElement} dropdownContainer The container of dropdowns that contain
+ * the updated locale
+ * @param {string[]} localeComponents The components of the locale used to obtain
+ * the timezone data
+ */
+ function updateStoredTimezones(dropdownContainer, localeComponents) {
+    const partialUrl = localeComponents.join('/');
+    setDisabledAttrOfDropdowns(dropdownContainer, true);
+    const contentPanelId = dropdownContainer.parentElement.id;
+    getTimezoneData(partialUrl)
+        .then(data => {
+            CURRENT_TIMEZONES[contentPanelId] = data;
+            const utcOffsetPara = document.querySelector(`#${contentPanelId} .utc-offset`);
+            utcOffsetPara.textContent = `UTC: ${data.utc_offset}`;
+            setDisabledAttrOfDropdowns(dropdownContainer, false);
+        })
+        .then(updateTimeOutput)
+        .catch(e => {
+            console.error(e);
+            setDisabledAttrOfDropdowns(dropdownContainer, false);
+        });
+}
+
+
+/**
+ * Removes all dropdown divs below the given dropdown div.
+ * @param {HTMLDivElement} dropdownDiv The dropdown whose siblings below it will be removed.
+ */
+ function removeSiblingsUnderDropdown(dropdownDiv) {
+    const parentDiv = dropdownDiv.parentElement;
+    while(parentDiv.lastChild !== dropdownDiv) {
+        parentDiv.removeChild(parentDiv.lastChild);
+    }
+}
+
+
+/**
+ * Gets the locale component title from the div that contains
+ * the super (parent) component.
+ * @param {HTMLDivElement} superDropdownDiv The dropdown div that contains the
+ * super-component of the locale.
+ * @returns {string} The title of the component (either 'location' or 'region').
+ */
+ function getComponentTitleFromSuperComponentDiv(superDropdownDiv) {
+    const indexOfComponent = superDropdownDiv.parentElement.childNodes.length + 1;
+    return (indexOfComponent === 2) ? 'location' : 'region';
+}
+
+
+/**
+ * Returns an array of strings that represent the possible
+ * values for the sub component of the given locale.
+ * @param {string[]} localeComponents The components of the locale.
+ * Can have a maximum of three elements representing the area, location,
+ * and region components respectively. Should have at least an area component.
+ * @returns {string[]|null} The possible values for the locale's sub component
+ * or null if the locale isn't valid.
+ */
+ function getSubComponentValuesOfLocale([area, location, region]) {
+    if(region) {
+        return (GROUPED_TIMEZONES_LOCALES[area]?.[location]?.includes(region)) ? [] : null;
+    }
+    if(location) {
+        return GROUPED_TIMEZONES_LOCALES[area]?.[location] ?? null;
+    }
+    return (GROUPED_TIMEZONES_LOCALES[area]) ? Object.keys(GROUPED_TIMEZONES_LOCALES[area]) : null;
+}
+
+
+/**
+ * Update the dropdowns to reflect the changes to the selected locales.
+ * @param {string} category Either 'origin' or 'target'.
+ * @param {HTMLDivElement} updatedDropdownDiv The dropdown that contains the 'leaf'
+ * of the updated locale.
+ * @param {string[]|null} subComponentValues The possible values of the sub component
+ * for the updated locale.
+ */
+function updateDropdowns(category, updatedDropdownDiv, subComponentValues) {
+    removeSiblingsUnderDropdown(updatedDropdownDiv);
+    if(subComponentValues === null || subComponentValues.length === 0) {
+        return;
+    }
+    const subComponentTitle = getComponentTitleFromSuperComponentDiv(updatedDropdownDiv);
+    const dropdownContainer = (category === 'origin') ? originDropdownContainer : targetDropdownContainer;
+    const optionValueTexts = getOptionValueMap(subComponentValues);
+    const subComponentDropdownId = `${category}-${subComponentTitle}`;
+    const subComponentDropdownDiv = createDropdown(subComponentDropdownId, `${subComponentTitle}: `, optionValueTexts);
+    dropdownContainer.appendChild(subComponentDropdownDiv);
+}
+
+
+/**
+ * Return the locale of the dropdown.
+ * 
+ * In other words, get the locale components of the timezone up until we hit the
+ * component that the given dropdown represents.
+ * @param {HTMLDivElement} dropdownDiv The dropdown with the 'leaf' portion of the locale.
+ * @returns {string[]} An array containing the components of the dropdown's locale.
+ */
+ function getLocaleOfDropdown(dropdownDiv) {
+    const localeDropdowns = Array.from(dropdownDiv.parentElement.childNodes);
+    const indexOfDropdownDiv = localeDropdowns.indexOf(dropdownDiv);
+    return localeDropdowns.slice(0, indexOfDropdownDiv + 1).map(dropdown => {
+        const selectElement = dropdown.lastChild;
+        return selectElement.value;
+    });
+}
+
+
+/**
+ * Returns the category of the dropdown div.
+ * 
+ * The category is either 'origin' or 'target'.
+ * @param {HTMLDivElement} dropdownDiv The dropdown to get the category of.
+ * @returns {string} The category of the dropdown.
+ */
+ function getCategoryOfDropdown(dropdownDiv) {
+    return dropdownDiv.id.split('-')[0];
+}
+
+
+/**
+ * The callback for all select elements. Used to create and remove dropdowns
+ * according to the selected locales.
+ */
+ function updateSelectedTimezoneCallback() {
+    const category = getCategoryOfDropdown(this.parentElement);
+    const localeComponents = getLocaleOfDropdown(this.parentElement);
+    const subComponentValues = getSubComponentValuesOfLocale(localeComponents);
+    updateDropdowns(category, this.parentElement, subComponentValues);
+    if(subComponentValues === null || subComponentValues.length !== 0) {
+        clearStoredTimezone(category);
+        updateTimeOutput();
+        return;
+    }
+    const dropdownContainer = this.parentElement.parentElement;
+    updateStoredTimezones(dropdownContainer, localeComponents);
+}
+
+
+/**
  * Creates a div containing a dropdown with the given values as well as a label 
  * for the dropdown.
  * @param {string} id The id of the div and the name of the select tag.
@@ -256,201 +453,6 @@ function swapOriginAndTargetTimezones() {
     [targetUTCOffset.textContent, originUTCOffset.textContent] = [originUTCOffset.textContent, targetUTCOffset.textContent];
 
     [CURRENT_TIMEZONES.origin, CURRENT_TIMEZONES.target] = [CURRENT_TIMEZONES.target, CURRENT_TIMEZONES.origin];
-}
-
-
-/**
- * Returns the category of the dropdown div.
- * 
- * The category is either 'origin' or 'target'.
- * @param {HTMLDivElement} dropdownDiv The dropdown to get the category of.
- * @returns {string} The category of the dropdown.
- */
-function getCategoryOfDropdown(dropdownDiv) {
-    return dropdownDiv.id.split('-')[0];
-}
-
-/**
- * Return the locale of the dropdown.
- * 
- * In other words, get the locale components of the timezone up until we hit the
- * component that the given dropdown represents.
- * @param {HTMLDivElement} dropdownDiv The dropdown with the 'leaf' portion of the locale.
- * @returns {string[]} An array containing the components of the dropdown's locale.
- */
-function getLocaleOfDropdown(dropdownDiv) {
-    const localeDropdowns = Array.from(dropdownDiv.parentElement.childNodes);
-    const indexOfDropdownDiv = localeDropdowns.indexOf(dropdownDiv);
-    return localeDropdowns.slice(0, indexOfDropdownDiv + 1).map(dropdown => {
-        const selectElement = dropdown.lastChild;
-        return selectElement.value;
-    });
-}
-
-
-/**
- * Returns an array of strings that represent the possible
- * values for the sub component of the given locale.
- * @param {string[]} localeComponents The components of the locale.
- * Can have a maximum of three elements representing the area, location,
- * and region components respectively. Should have at least an area component.
- * @returns {string[]|null} The possible values for the locale's sub component
- * or null if the locale isn't valid.
- */
-function getSubComponentValuesOfLocale([area, location, region]) {
-    if(region) {
-        return (GROUPED_TIMEZONES_LOCALES[area]?.[location]?.includes(region)) ? [] : null;
-    }
-    if(location) {
-        return GROUPED_TIMEZONES_LOCALES[area]?.[location] ?? null;
-    }
-    return (GROUPED_TIMEZONES_LOCALES[area]) ? Object.keys(GROUPED_TIMEZONES_LOCALES[area]) : null;
-}
-
-
-/**
- * Gets the locale component title from the div that contains
- * the super (parent) component.
- * @param {HTMLDivElement} superDropdownDiv The dropdown div that contains the
- * super-component of the locale.
- * @returns {string} The title of the component (either 'location' or 'region').
- */
-function getComponentTitleFromSuperComponentDiv(superDropdownDiv) {
-    const indexOfComponent = superDropdownDiv.parentElement.childNodes.length + 1;
-    return (indexOfComponent === 2) ? 'location' : 'region';
-}
-
-
-/**
- * Update the dropdowns to reflect the changes to the selected locales.
- * @param {string} category Either 'origin' or 'target'.
- * @param {HTMLDivElement} updatedDropdownDiv The dropdown that contains the 'leaf'
- * of the updated locale.
- * @param {string[]|null} subComponentValues The possible values of the sub component
- * for the updated locale.
- */
-function updateDropdowns(category, updatedDropdownDiv, subComponentValues) {
-    removeSiblingsUnderDropdown(updatedDropdownDiv);
-    if(subComponentValues === null || subComponentValues.length === 0) {
-        return;
-    }
-    const subComponentTitle = getComponentTitleFromSuperComponentDiv(updatedDropdownDiv);
-    const dropdownContainer = (category === 'origin') ? originDropdownContainer : targetDropdownContainer;
-    const optionValueTexts = getOptionValueMap(subComponentValues);
-    const subComponentDropdownId = `${category}-${subComponentTitle}`;
-    const subComponentDropdownDiv = createDropdown(subComponentDropdownId, `${subComponentTitle}: `, optionValueTexts);
-    dropdownContainer.appendChild(subComponentDropdownDiv);
-}
-
-
-/**
- * Sets the disabled attribute for all the dropdowns within the given container.
- * @param {HTMLDivElement} dropdownContainer Container of dropdown divs.
- * @param {boolean} disabledState Whether the dropdowns should be disabled or enabled.
- */
-function setDisabledAttrOfDropdowns(dropdownContainer, disabledState) {
-    dropdownContainer.childNodes.forEach(node => {
-        const selectElement = node.lastChild;
-        selectElement.disabled = disabledState;
-    });
-}
-
-
-/**
- * Retrieves and stores the timezone data of the complete locale
- * @param {HTMLDivElement} dropdownContainer The container of dropdowns that contain
- * the updated locale
- * @param {string[]} localeComponents The components of the locale used to obtain
- * the timezone data
- */
-function updateStoredTimezones(dropdownContainer, localeComponents) {
-    const partialUrl = localeComponents.join('/');
-    setDisabledAttrOfDropdowns(dropdownContainer, true);
-    const contentPanelId = dropdownContainer.parentElement.id;
-    getTimezoneData(partialUrl)
-        .then(data => {
-            CURRENT_TIMEZONES[contentPanelId] = data;
-            const utcOffsetPara = document.querySelector(`#${contentPanelId} .utc-offset`);
-            utcOffsetPara.textContent = `UTC: ${data.utc_offset}`;
-            setDisabledAttrOfDropdowns(dropdownContainer, false);
-        })
-        .then(updateTimeOutput)
-        .catch(e => {
-            console.error(e);
-            setDisabledAttrOfDropdowns(dropdownContainer, false);
-        });
-}
-
-
-/**
- * Clears the stored timezone for the category. Resets the UTC offset
- * for the content of the category as well.
- * @param {string} category Either 'origin' or 'target'.
- */
-function clearStoredTimezone(category) {
-    CURRENT_TIMEZONES[category] = null;
-    const utcOffsetPara = document.querySelector(`#${category} .utc-offset`);
-    utcOffsetPara.textContent = 'UTC: N/A';
-}
-
-
-/**
- * Updates the time output to display the target time at the specified origin
- * time. The time output is in the 12-hour format. If the time input is incomplete
- * or either of the inputted timezone locales are incomplete, then the time output
- * is cleared.
- * @returns 
- */
-function updateTimeOutput() {
-    if(!(CURRENT_TIMEZONES.origin && CURRENT_TIMEZONES.target && timeInput.value)) {
-        timeOutput.textContent = "--:-- --";
-        return;
-    }
-    const timeInputMilliseconds = convertTimeStringToMilliseconds(timeInput.value);
-    const targetTimeMilliseconds = findTimeAtTargetTZ(CURRENT_TIMEZONES.origin, CURRENT_TIMEZONES.target, timeInputMilliseconds);
-    const {hours: targetTimeHours, minutes: targetTimeMinutes} = getHoursAndMinutesFromMilliseconds(targetTimeMilliseconds);
-    timeOutput.textContent = convert24HourTimeStringTo12Hour(`${targetTimeHours}:${targetTimeMinutes}`);
-}
-
-
-/**
- * The callback for all select elements. Used to create and remove dropdowns
- * according to the selected locales.
- */
-function updateSelectedTimezoneCallback() {
-    const category = getCategoryOfDropdown(this.parentElement);
-    const localeComponents = getLocaleOfDropdown(this.parentElement);
-    const subComponentValues = getSubComponentValuesOfLocale(localeComponents);
-    updateDropdowns(category, this.parentElement, subComponentValues);
-    if(subComponentValues === null || subComponentValues.length !== 0) {
-        clearStoredTimezone(category);
-        updateTimeOutput();
-        return;
-    }
-    const dropdownContainer = this.parentElement.parentElement;
-    updateStoredTimezones(dropdownContainer, localeComponents);
-}
-
-/**
- * Removes all dropdown divs below the given dropdown div.
- * @param {HTMLDivElement} dropdownDiv The dropdown whose siblings below it will be removed.
- */
-function removeSiblingsUnderDropdown(dropdownDiv) {
-    const parentDiv = dropdownDiv.parentElement;
-    while(parentDiv.lastChild !== dropdownDiv) {
-        parentDiv.removeChild(parentDiv.lastChild);
-    }
-}
-
-/**
- * Transforms array of locale components into a version without underscores for
- * display.
- * @param {string[]} localeArray An array of locale components
- * @returns {Map<string, string>} A map that has the locale components as keys and their
- * display-friendly form as values.
- */
-function getOptionValueMap(localeArray) {
-    return new Map(localeArray.map(key => [key, key.replace('_', ' ')]));
 }
 
 
